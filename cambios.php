@@ -227,11 +227,11 @@ function rifa_get_lottery_range( $product_id ) {
 
     if ( ! empty($range_meta) && strpos($range_meta, '-') !== false ) {
         list($min, $max) = explode('-', $range_meta);
-        $min = intval(trim($min));
+        $min = intval(trim($min)) - 1;
         $max = intval(trim($max)) - 1; // restamos 1 para que sea 0 a n-1
     } else {
         $min = 0;
-        $max = 99; // 100 números: 0-99
+        $max = 9; // 100 números: 0-99
     }
 
     return array( 'min' => $min, 'max' => $max );
