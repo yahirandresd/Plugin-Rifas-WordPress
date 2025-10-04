@@ -8,8 +8,7 @@ Author: Yahir Andres Rangel Dueñas - NetVuk Interactive
 
 /* 1. Campo de selección de números con popup mejorado */
 add_action('woocommerce_before_add_to_cart_quantity', 'rifa_custom_number_field_popup');
-function rifa_custom_number_field_popup()
-{
+function rifa_custom_number_field_popup() {
     ?>
     <div class="rifa-numbers" style="margin:15px 0;padding:10px;border:1px solid #ddd;">
         <label><strong>Selecciona tu opción:</strong></label>
@@ -20,95 +19,24 @@ function rifa_custom_number_field_popup()
     </div>
 
     <style>
-        #rifa_popup {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: #fff;
-            border: 1px solid #ccc;
-            border-radius: 8px;
-            max-width: 90%;
-            max-height: 80%;
-            z-index: 9999;
-            display: flex;
-            flex-direction: column;
-            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
-        }
-
-        #rifa_popup_header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 10px 15px;
-            border-bottom: 1px solid #eee;
-            font-size: 18px;
-            font-weight: bold;
-        }
-
-        #rifa_popup_close {
-            cursor: pointer;
-            font-size: 20px;
-            font-weight: bold;
-            background: none;
-            border: none;
-        }
-
-        #rifa_numbers_container {
-            padding: 10px 15px;
-            overflow-y: auto;
-            flex: 1 1 auto;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 5px;
-        }
-
-        .rifa-number {
-            padding: 8px 12px;
-            border: 1px solid #ccc;
-            border-radius: 5px;
-            cursor: pointer;
-            user-select: none;
-        }
-
-        .rifa-number.selected {
-            background-color: #0073aa;
-            color: #fff;
-            border-color: #005177;
-        }
-
-        .rifa-number.ocupado {
-            background-color: #ccc;
-            color: #666;
-            border-color: #999;
-            cursor: not-allowed;
-        }
-
-        #rifa_popup_footer {
-            padding: 10px 15px;
-            border-top: 1px solid #eee;
-            display: flex;
-            justify-content: flex-end;
-            flex-shrink: 0;
-        }
-
-        #add_rifa_to_cart {
-            background-color: #0073aa;
-            color: #fff;
-            border: none;
-            padding: 8px 15px;
-            border-radius: 5px;
-            cursor: pointer;
-        }
+        #rifa_popup { position: fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:#fff; border:1px solid #ccc; border-radius:8px; max-width:90%; max-height:80%; z-index:9999; display:flex; flex-direction:column; box-shadow:0 4px 10px rgba(0,0,0,0.2);}
+        #rifa_popup_header { display:flex; justify-content:space-between; align-items:center; padding:10px 15px; border-bottom:1px solid #eee; font-size:18px; font-weight:bold;}
+        #rifa_popup_close { cursor:pointer; font-size:20px; font-weight:bold; background:none; border:none;}
+        #rifa_numbers_container { padding:10px 15px; overflow-y:auto; flex:1 1 auto; display:flex; flex-wrap:wrap; gap:5px;}
+        .rifa-number { padding:8px 12px; border:1px solid #ccc; border-radius:5px; cursor:pointer; user-select:none;}
+        .rifa-number.selected { background-color:#0073aa; color:#fff; border-color:#005177;}
+        #rifa_popup_footer { padding:10px 15px; border-top:1px solid #eee; display:flex; justify-content:flex-end; flex-shrink:0; flex-direction:column; }
+        #add_rifa_to_cart { background-color:#0073aa; color:#fff; border:none; padding:8px 15px; border-radius:5px; cursor:pointer; }
+        #rifa_error_msg { color:red; text-align:center; margin-top:10px; font-weight:bold; display:none; }
     </style>
 
     <script type="text/javascript">
-        jQuery(document).ready(function ($) {
-            $('.rifa-option').click(function () {
+        jQuery(document).ready(function($){
+            $('.rifa-option').click(function(){
                 var option = $(this).data('option');
-                if (option === 'choose') {
+                if(option === 'choose'){
                     $('.single_add_to_cart_button').hide();
-                    if ($('#choose_rifa_btn').length === 0) {
+                    if($('#choose_rifa_btn').length === 0){
                         $('<button type="button" id="choose_rifa_btn" class="button">Elegir Números</button>').insertAfter('.single_add_to_cart_button');
                     }
                 } else {
@@ -118,76 +46,62 @@ function rifa_custom_number_field_popup()
                 }
             });
 
-            // Abrir popup
-            $(document).on('click', '#choose_rifa_btn', function () {
-                $.ajax({
-                    url: "<?php echo admin_url('admin-ajax.php'); ?>",
-                    method: "POST",
-                    data: { action: 'rifa_get_available_numbers', product_id: <?php echo get_the_ID(); ?> },
-                    success: function (data) {
-                        // Obtener números ocupados desde PHP
-                        var ocupados = <?php
-                            global $wpdb;
-                            $ocupados = $wpdb->get_col( $wpdb->prepare("
-                                SELECT meta_value 
-                                FROM {$wpdb->prefix}woocommerce_order_itemmeta
-                                WHERE meta_key = 'Números de la rifa'
-                            ") );
-                            $ocupados_int = [];
-                            foreach ( $ocupados as $num_str ) {
-                                $nums = array_map('intval', explode(',', $num_str));
-                                $ocupados_int = array_merge($ocupados_int, $nums);
-                            }
-                            echo json_encode($ocupados_int);
-                        ?>;
+            $(document).on('click','#choose_rifa_btn', function(){
+                // Obtener cantidad desde el span
+                var cantidad = parseInt($('#ticket-count-in-single-simple-product').data('ticket') || $('#ticket-count-in-single-simple-product').text());
 
+                $.ajax({
+                    url:"<?php echo admin_url('admin-ajax.php'); ?>",
+                    method:"POST",
+                    data:{ action:'rifa_get_available_numbers', product_id: <?php echo get_the_ID(); ?> },
+                    success:function(data){
                         var popup = '<div id="rifa_popup">';
                         popup += '<div id="rifa_popup_header">Elige tus números <button id="rifa_popup_close">&times;</button></div>';
                         popup += '<div id="rifa_numbers_container">';
-                        data.numbers.forEach(function (num) {
-                            if (ocupados.includes(num)) {
-                                popup += '<button class="rifa-number ocupado" data-num="' + num + '" disabled>' + num + '</button> ';
-                            } else {
-                                popup += '<button class="rifa-number" data-num="' + num + '">' + num + '</button> ';
-                            }
+                        data.numbers.forEach(function(num){
+                            popup += '<button class="rifa-number" data-num="'+num+'">'+num+'</button> ';
                         });
                         popup += '</div>';
-                        popup += '<div id="rifa_popup_footer"><button id="add_rifa_to_cart">Agregar al carrito</button></div>';
+                        popup += '<div id="rifa_error_msg">Debes seleccionar '+cantidad+' número(s).</div>';
+                        popup += '<div id="rifa_popup_footer"><button id="add_rifa_to_cart" disabled>Agregar al carrito</button></div>';
                         popup += '</div>';
                         $('body').append(popup);
                     }
                 });
             });
 
-            // Cerrar popup con X
-            $(document).on('click', '#rifa_popup_close', function () {
-                $('#rifa_popup').remove();
-            });
+            $(document).on('click','#rifa_popup_close', function(){ $('#rifa_popup').remove(); });
 
-            // Selección de números
-            $(document).on('click', '.rifa-number', function () {
-                if (!$(this).hasClass('ocupado')) {
-                    $(this).toggleClass('selected');
+            $(document).on('click','.rifa-number', function(){
+                $(this).toggleClass('selected');
+                var selected_count = $('#rifa_numbers_container .rifa-number.selected').length;
+                var cantidad = parseInt($('#ticket-count-in-single-simple-product').data('ticket') || $('#ticket-count-in-single-simple-product').text());
+                if(selected_count === cantidad){
+                    $('#add_rifa_to_cart').prop('disabled', false);
+                    $('#rifa_error_msg').hide();
+                } else {
+                    $('#add_rifa_to_cart').prop('disabled', true);
+                    $('#rifa_error_msg').show();
                 }
             });
 
             // Agregar al carrito
-            $(document).on('click', '#add_rifa_to_cart', function () {
+            $(document).on('click','#add_rifa_to_cart', function(){
                 var selected = [];
-                $('#rifa_numbers_container .rifa-number.selected').each(function () {
+                $('#rifa_numbers_container .rifa-number.selected').each(function(){
                     selected.push($(this).data('num'));
                 });
 
-                if (selected.length === 0) {
-                    alert('Selecciona al menos un número.');
+                var cantidad = parseInt($('#ticket-count-in-single-simple-product').data('ticket') || $('#ticket-count-in-single-simple-product').text());
+                if(selected.length != cantidad){
+                    $('#rifa_error_msg').show();
                     return;
                 }
 
-                if ($('#rifa_numbers_input').length === 0) {
+                if($('#rifa_numbers_input').length===0){
                     $('<input type="hidden" id="rifa_numbers_input" name="rifa_numbers">').appendTo('form.cart');
                 }
                 $('#rifa_numbers_input').val(selected.join(', '));
-
                 $('.single_add_to_cart_button').show();
                 $('#rifa_popup').remove();
             });
