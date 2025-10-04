@@ -6,19 +6,159 @@ Version: 1.1
 Author: Yahir Andres Rangel Dueñas - NetVuk Interactive 
 */
 
-/* 1. Mostrar campo en la página de producto */
-add_action( 'woocommerce_before_add_to_cart_quantity', 'rifa_custom_number_field' );
-function rifa_custom_number_field() {
+/* 1. Campo de selección de números con popup mejorado */
+add_action( 'woocommerce_before_add_to_cart_quantity', 'rifa_custom_number_field_popup' );
+function rifa_custom_number_field_popup() {
     ?>
     <div class="rifa-numbers" style="margin:15px 0;padding:10px;border:1px solid #ddd;">
-        <label for="rifa_numbers"><strong>Elige tus números (separados por comas):</strong></label>
-        <input type="text" name="rifa_numbers" id="rifa_numbers" placeholder="Ej: 5, 23, 77" style="width:100%;margin-top:5px;">
+        <label><strong>Selecciona tu opción:</strong></label>
         <p style="margin:8px 0;">
-            <label><input type="checkbox" name="rifa_random" value="1"> Asignar números aleatorios</label>
+            <button type="button" class="rifa-option" data-option="random">Aleatorio</button>
+            <button type="button" class="rifa-option" data-option="choose">Elegir</button>
         </p>
     </div>
+
+    <style>
+    #rifa_popup {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: #fff;
+        border: 1px solid #ccc;
+        border-radius: 8px;
+        max-width: 90%;
+        max-height: 80%;
+        z-index: 9999;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    }
+    #rifa_popup_header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 10px 15px;
+        border-bottom: 1px solid #eee;
+        font-size: 18px;
+        font-weight: bold;
+    }
+    #rifa_popup_close {
+        cursor: pointer;
+        font-size: 20px;
+        font-weight: bold;
+        background: none;
+        border: none;
+    }
+    #rifa_numbers_container {
+        padding: 10px 15px;
+        overflow-y: auto;
+        flex: 1 1 auto;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+    }
+    .rifa-number {
+        padding: 8px 12px;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+        cursor: pointer;
+        user-select: none;
+    }
+    .rifa-number.selected {
+        background-color: #0073aa;
+        color: #fff;
+        border-color: #005177;
+    }
+    #rifa_popup_footer {
+        padding: 10px 15px;
+        border-top: 1px solid #eee;
+        display: flex;
+        justify-content: flex-end;
+        flex-shrink: 0;
+    }
+    #add_rifa_to_cart {
+        background-color: #0073aa;
+        color: #fff;
+        border: none;
+        padding: 8px 15px;
+        border-radius: 5px;
+        cursor: pointer;
+    }
+    </style>
+
+    <script type="text/javascript">
+    jQuery(document).ready(function($){
+        $('.rifa-option').click(function(){
+            var option = $(this).data('option');
+            if(option === 'choose'){
+                $('.single_add_to_cart_button').hide();
+                if($('#choose_rifa_btn').length === 0){
+                    $('<button type="button" id="choose_rifa_btn" class="button">Elegir Números</button>').insertAfter('.single_add_to_cart_button');
+                }
+            } else {
+                $('.single_add_to_cart_button').show();
+                $('#choose_rifa_btn').remove();
+                $('<input type="hidden" name="rifa_random" value="1">').appendTo('form.cart');
+            }
+        });
+
+        // Abrir popup
+        $(document).on('click','#choose_rifa_btn', function(){
+            $.ajax({
+                url: "<?php echo admin_url('admin-ajax.php'); ?>",
+                method: "POST",
+                data: { action: 'rifa_get_available_numbers', product_id: <?php echo get_the_ID(); ?> },
+                success: function(data){
+                    var popup = '<div id="rifa_popup">';
+                    popup += '<div id="rifa_popup_header">Elige tus números <button id="rifa_popup_close">&times;</button></div>';
+                    popup += '<div id="rifa_numbers_container">';
+                    data.numbers.forEach(function(num){
+                        popup += '<button class="rifa-number" data-num="'+num+'">'+num+'</button> ';
+                    });
+                    popup += '</div>';
+                    popup += '<div id="rifa_popup_footer"><button id="add_rifa_to_cart">Agregar al carrito</button></div>';
+                    popup += '</div>';
+                    $('body').append(popup);
+                }
+            });
+        });
+
+        // Cerrar popup con X
+        $(document).on('click','#rifa_popup_close', function(){
+            $('#rifa_popup').remove();
+        });
+
+        // Selección de números
+        $(document).on('click','.rifa-number', function(){
+            $(this).toggleClass('selected');
+        });
+
+        // Agregar al carrito
+        $(document).on('click','#add_rifa_to_cart', function(){
+            var selected = [];
+            $('#rifa_numbers_container .rifa-number.selected').each(function(){
+                selected.push($(this).data('num'));
+            });
+
+            if(selected.length === 0){
+                alert('Selecciona al menos un número.');
+                return;
+            }
+
+            if($('#rifa_numbers_input').length === 0){
+                $('<input type="hidden" id="rifa_numbers_input" name="rifa_numbers">').appendTo('form.cart');
+            }
+            $('#rifa_numbers_input').val(selected.join(', '));
+
+            $('.single_add_to_cart_button').show();
+            $('#rifa_popup').remove();
+        });
+    });
+    </script>
     <?php
 }
+
 
 /* 2. Validar que los números no estén repetidos */
 add_filter( 'woocommerce_add_to_cart_validation', 'rifa_validate_numbers', 10, 2 );
@@ -53,11 +193,9 @@ function rifa_add_cart_item_data( $cart_item_data, $product_id ) {
     if ( isset($_POST['rifa_numbers']) && ! empty($_POST['rifa_numbers']) ) {
         $cart_item_data['rifa_numbers'] = sanitize_text_field($_POST['rifa_numbers']);
     }
-    if ( isset($_POST['rifa_random']) ) {
-        $cart_item_data['rifa_random'] = true;
-    }
     return $cart_item_data;
 }
+
 
 /* 4. Mostrar en carrito y checkout */
 add_filter( 'woocommerce_get_item_data', 'rifa_display_cart_item_data', 10, 2 );
@@ -68,14 +206,9 @@ function rifa_display_cart_item_data( $item_data, $cart_item ) {
             'value' => $cart_item['rifa_numbers'],
         );
     }
-    if ( isset($cart_item['rifa_random']) ) {
-        $item_data[] = array(
-            'name'  => 'Números aleatorios',
-            'value' => 'Sí',
-        );
-    }
     return $item_data;
 }
+
 
 /* 5. Guardar en los detalles del pedido */
 add_action( 'woocommerce_checkout_create_order_line_item', 'rifa_add_order_item_meta', 10, 4 );
@@ -86,4 +219,73 @@ function rifa_add_order_item_meta( $item, $cart_item_key, $values, $order ) {
     if ( isset($values['rifa_random']) ) {
         $item->add_meta_data( 'Números aleatorios', 'Sí', true );
     }
+}
+
+/* 6. Obtener rango definido en WooCommerce Lottery (0 a n-1) */
+function rifa_get_lottery_range( $product_id ) {
+    $range_meta = get_post_meta( $product_id, '_ticket_range', true );
+
+    if ( ! empty($range_meta) && strpos($range_meta, '-') !== false ) {
+        list($min, $max) = explode('-', $range_meta);
+        $min = intval(trim($min));
+        $max = intval(trim($max)) - 1; // restamos 1 para que sea 0 a n-1
+    } else {
+        $min = 0;
+        $max = 99; // 100 números: 0-99
+    }
+
+    return array( 'min' => $min, 'max' => $max );
+}
+
+
+
+/* 7. Generar números aleatorios disponibles */
+function rifa_generate_random_numbers( $product_id, $cantidad = 1 ) {
+    global $wpdb;
+    $range = rifa_get_lottery_range( $product_id );
+
+    // Números ya ocupados
+    $ocupados = $wpdb->get_col( "
+        SELECT meta_value 
+        FROM {$wpdb->prefix}woocommerce_order_itemmeta 
+        WHERE meta_key = 'Números de la rifa'
+    " );
+    $ocupados = array_map( 'intval', $ocupados );
+
+    $disponibles = array();
+    for ( $i = $range['min']; $i <= $range['max']; $i++ ) {
+        if ( ! in_array( $i, $ocupados ) ) {
+            $disponibles[] = $i;
+        }
+    }
+
+    // Mezclamos y tomamos la cantidad solicitada
+    shuffle( $disponibles );
+    return array_slice( $disponibles, 0, $cantidad );
+}
+
+/* 8. Manejar aleatorio al añadir al carrito */
+add_filter( 'woocommerce_add_cart_item_data', 'rifa_handle_random_numbers', 20, 2 );
+function rifa_handle_random_numbers( $cart_item_data, $product_id ) {
+    if ( isset($_POST['rifa_random']) ) {
+        $numeros = rifa_generate_random_numbers( $product_id, 1 );
+        $cart_item_data['rifa_numbers'] = implode(', ', $numeros);
+        unset($_POST['rifa_random']); // quitamos flag
+    }
+    return $cart_item_data;
+}
+
+
+/* Función AJAX para obtener números disponibles */
+add_action('wp_ajax_rifa_get_available_numbers', 'rifa_get_available_numbers');
+add_action('wp_ajax_nopriv_rifa_get_available_numbers', 'rifa_get_available_numbers');
+
+function rifa_get_available_numbers(){
+    $product_id = intval($_POST['product_id']);
+    $range = rifa_get_lottery_range($product_id);
+
+    // Todos los números del rango
+    $disponibles = range($range['min'], $range['max']);
+
+    wp_send_json(['numbers' => $disponibles]);
 }
