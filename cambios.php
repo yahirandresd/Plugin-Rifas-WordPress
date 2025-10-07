@@ -110,30 +110,32 @@ function rifa_custom_number_field_popup() {
     <?php
 }
 
-
-
-/* 2. Validar que los números no estén repetidos */
+/* 2. Validar que los números no estén repetidos (por producto) */
 add_filter('woocommerce_add_to_cart_validation', 'rifa_validate_numbers', 10, 2);
 function rifa_validate_numbers($passed, $product_id)
 {
     if (isset($_POST['rifa_numbers']) && !empty($_POST['rifa_numbers'])) {
         global $wpdb;
 
-        // Números ingresados por el usuario
+        // Números elegidos por el usuario
         $numbers = array_map('trim', explode(',', sanitize_text_field($_POST['rifa_numbers'])));
 
         foreach ($numbers as $num) {
-            // Buscar si el número ya existe en pedidos
+            // Buscar si ese número ya fue comprado para este mismo producto
             $exists = $wpdb->get_var($wpdb->prepare("
-                SELECT COUNT(meta_id) 
-                FROM {$wpdb->prefix}woocommerce_order_itemmeta 
-                WHERE meta_key = 'Números de la rifa' 
-                AND meta_value LIKE %s
-            ", '%' . $num . '%'));
+                SELECT COUNT(im.meta_id)
+                FROM {$wpdb->prefix}woocommerce_order_items oi
+                INNER JOIN {$wpdb->prefix}woocommerce_order_itemmeta im ON oi.order_item_id = im.order_item_id
+                INNER JOIN {$wpdb->prefix}woocommerce_order_itemmeta pm ON pm.order_item_id = oi.order_item_id
+                WHERE im.meta_key = 'Números de la rifa'
+                AND im.meta_value LIKE %s
+                AND pm.meta_key = '_product_id'
+                AND pm.meta_value = %d
+            ", '%' . $num . '%', $product_id));
 
             if ($exists > 0) {
-                wc_add_notice("El número <strong>{$num}</strong> ya fue comprado. Por favor elige otro.", 'error');
-                return false; // ❌ No deja añadir al carrito
+                wc_add_notice("El número <strong>{$num}</strong> ya fue comprado para esta rifa. Por favor elige otro.", 'error');
+                return false;
             }
         }
     }
@@ -194,30 +196,30 @@ function rifa_get_lottery_range($product_id)
     return array('min' => $min, 'max' => $max);
 }
 
-
-
-/* 7. Generar números aleatorios disponibles */
+/* 7. Generar números aleatorios disponibles (por producto) */
 function rifa_generate_random_numbers($product_id, $cantidad = 1)
 {
     global $wpdb;
     $range = rifa_get_lottery_range($product_id);
 
-    // Números ya ocupados
-    $ocupados = $wpdb->get_col("
-        SELECT meta_value 
-        FROM {$wpdb->prefix}woocommerce_order_itemmeta 
-        WHERE meta_key = 'Números de la rifa'
-    ");
-    $ocupados = array_map('intval', $ocupados);
+    // Números ya ocupados del producto actual
+    $ocupados = $wpdb->get_col($wpdb->prepare("
+        SELECT im.meta_value
+        FROM {$wpdb->prefix}woocommerce_order_items oi
+        INNER JOIN {$wpdb->prefix}woocommerce_order_itemmeta im ON oi.order_item_id = im.order_item_id
+        WHERE im.meta_key = 'Números de la rifa'
+        AND oi.order_item_name = (SELECT post_title FROM {$wpdb->prefix}posts WHERE ID = %d)
+    ", $product_id));
 
-    $disponibles = array();
+    $ocupados = array_map('trim', explode(',', implode(',', $ocupados)));
+
+    $disponibles = [];
     for ($i = $range['min']; $i <= $range['max']; $i++) {
-        if (!in_array($i, $ocupados)) {
+        if (!in_array((string)$i, $ocupados)) {
             $disponibles[] = $i;
         }
     }
 
-    // Mezclamos y tomamos la cantidad solicitada
     shuffle($disponibles);
     return array_slice($disponibles, 0, $cantidad);
 }
@@ -235,25 +237,42 @@ function rifa_handle_random_numbers($cart_item_data, $product_id)
     return $cart_item_data;
 }
 
-
-
-
-
-
-/* Función AJAX para obtener números disponibles */
+/* ✅ Función AJAX para obtener solo los números disponibles del producto actual */
 add_action('wp_ajax_rifa_get_available_numbers', 'rifa_get_available_numbers');
 add_action('wp_ajax_nopriv_rifa_get_available_numbers', 'rifa_get_available_numbers');
 
-function rifa_get_available_numbers()
-{
+function rifa_get_available_numbers() {
+    global $wpdb;
+
     $product_id = intval($_POST['product_id']);
     $range = rifa_get_lottery_range($product_id);
 
     // Todos los números del rango
-    $disponibles = range($range['min'], $range['max']);
+    $todos = range($range['min'], $range['max']);
 
-    wp_send_json(['numbers' => $disponibles]);
+    // Buscar los números ya ocupados (para ese producto)
+    $resultados = $wpdb->get_col($wpdb->prepare("
+        SELECT im.meta_value
+        FROM {$wpdb->prefix}woocommerce_order_items oi
+        INNER JOIN {$wpdb->prefix}woocommerce_order_itemmeta im ON oi.order_item_id = im.order_item_id
+        INNER JOIN {$wpdb->prefix}woocommerce_order_itemmeta pm ON pm.order_item_id = oi.order_item_id
+        WHERE im.meta_key = 'Números de la rifa'
+        AND pm.meta_key = '_product_id'
+        AND pm.meta_value = %d
+    ", $product_id));
+
+    $ocupados = [];
+    foreach ($resultados as $r) {
+        $nums = array_map('trim', explode(',', $r));
+        $ocupados = array_merge($ocupados, $nums);
+    }
+
+    // Filtrar los disponibles
+    $disponibles = array_diff($todos, $ocupados);
+
+    wp_send_json(['numbers' => array_values($disponibles)]);
 }
+
 
 /* 9. Liberar números si un pedido se cancela */
 /* Liberar números si un pedido se cancela */
