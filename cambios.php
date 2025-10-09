@@ -117,24 +117,24 @@ function rifa_validate_numbers($passed, $product_id)
     if (isset($_POST['rifa_numbers']) && !empty($_POST['rifa_numbers'])) {
         global $wpdb;
 
-        // Números elegidos por el usuario
-        $numbers = array_map('trim', explode(',', sanitize_text_field($_POST['rifa_numbers'])));
+        // Números elegidos por el usuario -> normalizar a enteros
+        $numbers = array_filter(array_map('trim', explode(',', sanitize_text_field($_POST['rifa_numbers']))), 'strlen');
+        $numbers = array_map('intval', $numbers);
 
         foreach ($numbers as $num) {
-            // Buscar si ese número ya fue comprado para este mismo producto
+            // Buscar si ese número ya fue comprado para este mismo producto (coincidencia exacta)
             $exists = $wpdb->get_var($wpdb->prepare("
                 SELECT COUNT(im.meta_id)
                 FROM {$wpdb->prefix}woocommerce_order_items oi
                 INNER JOIN {$wpdb->prefix}woocommerce_order_itemmeta im ON oi.order_item_id = im.order_item_id
-                INNER JOIN {$wpdb->prefix}woocommerce_order_itemmeta pm ON pm.order_item_id = oi.order_item_id
+                INNER JOIN {$wpdb->prefix}woocommerce_order_itemmeta pm ON pm.order_item_id = oi.order_item_id AND pm.meta_key = '_product_id'
                 WHERE im.meta_key = 'Números de la rifa'
-                AND im.meta_value LIKE %s
-                AND pm.meta_key = '_product_id'
+                AND FIND_IN_SET(%s, REPLACE(im.meta_value, ' ', '')) > 0
                 AND pm.meta_value = %d
-            ", '%' . $num . '%', $product_id));
+            ", (string)$num, $product_id));
 
             if ($exists > 0) {
-                wc_add_notice("El número <strong>{$num}</strong> ya fue comprado para esta rifa. Por favor elige otro.", 'error');
+                wc_add_notice(sprintf("El número <strong>%s</strong> ya fue comprado para esta rifa. Por favor elige otro.", esc_html($num)), 'error');
                 return false;
             }
         }
@@ -142,16 +142,20 @@ function rifa_validate_numbers($passed, $product_id)
     return $passed;
 }
 
-/* 3. Guardar los números en el carrito */
+/* 3. Guardar los números en el carrito (normalizados, sin espacios) */
 add_filter('woocommerce_add_cart_item_data', 'rifa_add_cart_item_data', 10, 2);
 function rifa_add_cart_item_data($cart_item_data, $product_id)
 {
     if (isset($_POST['rifa_numbers']) && !empty($_POST['rifa_numbers'])) {
-        $cart_item_data['rifa_numbers'] = sanitize_text_field($_POST['rifa_numbers']);
+        // Sanear, separar, convertir a enteros y volver a unir sin espacios
+        $raw = sanitize_text_field($_POST['rifa_numbers']);
+        $parts = array_filter(array_map('trim', explode(',', $raw)), 'strlen');
+        $parts = array_map('intval', $parts); // fuerza enteros
+        $parts = array_map('strval', $parts); // a string nuevamente
+        $cart_item_data['rifa_numbers'] = implode(',', $parts); // ejemplo: "1,5,23"
     }
     return $cart_item_data;
 }
-
 
 /* 4. Mostrar en carrito y checkout */
 add_filter('woocommerce_get_item_data', 'rifa_display_cart_item_data', 10, 2);
@@ -202,20 +206,30 @@ function rifa_generate_random_numbers($product_id, $cantidad = 1)
     global $wpdb;
     $range = rifa_get_lottery_range($product_id);
 
-    // Números ya ocupados del producto actual
-    $ocupados = $wpdb->get_col($wpdb->prepare("
+    // Obtener todos los meta_value de 'Números de la rifa' para este product_id
+    $ocupados_raw = $wpdb->get_col($wpdb->prepare("
         SELECT im.meta_value
         FROM {$wpdb->prefix}woocommerce_order_items oi
         INNER JOIN {$wpdb->prefix}woocommerce_order_itemmeta im ON oi.order_item_id = im.order_item_id
+        INNER JOIN {$wpdb->prefix}woocommerce_order_itemmeta pm ON pm.order_item_id = oi.order_item_id AND pm.meta_key = '_product_id'
         WHERE im.meta_key = 'Números de la rifa'
-        AND oi.order_item_name = (SELECT post_title FROM {$wpdb->prefix}posts WHERE ID = %d)
+        AND pm.meta_value = %d
     ", $product_id));
 
-    $ocupados = array_map('trim', explode(',', implode(',', $ocupados)));
+    // Normalizar: separar todos los strings en números enteros
+    $ocupados = [];
+    foreach ($ocupados_raw as $meta) {
+        if (strlen(trim($meta)) === 0) continue;
+        $parts = array_filter(array_map('trim', explode(',', $meta)), 'strlen');
+        foreach ($parts as $p) {
+            $ocupados[] = intval($p);
+        }
+    }
+    $ocupados = array_values(array_unique($ocupados)); // enteros únicos
 
     $disponibles = [];
     for ($i = $range['min']; $i <= $range['max']; $i++) {
-        if (!in_array((string)$i, $ocupados)) {
+        if (!in_array($i, $ocupados, true)) {
             $disponibles[] = $i;
         }
     }
